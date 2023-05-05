@@ -7,6 +7,8 @@
 
 #include "benchmark/benchmark.h"
 
+#include <random>
+
 namespace RooFitADBenchmarksUtils {
 
 enum backend { Reference, BatchMode, CodeSquashNumDiff, CodeSquashAD };
@@ -16,42 +18,45 @@ void doBenchmarks(F func, int rangeMin, int rangeMax, int step, int numIteration
 {
    // Run the minimization with the reference NLL
    benchmark::RegisterBenchmark("NllReferenceMinimization", func)
-      ->ArgsProduct({{Reference}, benchmark::CreateRange(rangeMin, rangeMax, step)})
+      ->ArgsProduct({{Reference}, benchmark::CreateDenseRange(rangeMin, rangeMax, step)})
       ->Unit(unit)
       ->Iterations(numIterations);
 
    // Run the minimization with the reference NLL (BatchMode)
-   benchmark::RegisterBenchmark("NllBatchModeMinimization", func)
-      ->ArgsProduct({{BatchMode}, benchmark::CreateRange(rangeMin, rangeMax, step)})
-      ->Unit(unit)
-      ->Iterations(numIterations);
+   // benchmark::RegisterBenchmark("NllBatchModeMinimization", func)
+   //    ->ArgsProduct({{BatchMode}, benchmark::CreateDenseRange(rangeMin, rangeMax, step)})
+   //    ->Unit(unit)
+   //    ->Iterations(numIterations);
 
    // Run the minimization with the code-squashed version with numerical-diff.
    benchmark::RegisterBenchmark("NllCodeSquash_NumDiff", func)
-      ->ArgsProduct({{CodeSquashNumDiff}, benchmark::CreateRange(rangeMin, rangeMax, step)})
+      ->ArgsProduct({{CodeSquashNumDiff}, benchmark::CreateDenseRange(rangeMin, rangeMax, step)})
       ->Unit(unit)
       ->Iterations(numIterations);
 
    // Run the minimization with the code-squashed version with AD.
    benchmark::RegisterBenchmark("NllCodeSquash_AD", func)
-      ->ArgsProduct({{CodeSquashAD}, benchmark::CreateRange(rangeMin, rangeMax, step)})
+      ->ArgsProduct({{CodeSquashAD}, benchmark::CreateDenseRange(rangeMin, rangeMax, step)})
       ->Unit(unit)
       ->Iterations(numIterations);
 }
 
 void randomizeParameters(const RooArgSet &parameters, ULong_t seed = 0)
 {
-   auto random = RooRandom::randomGenerator();
-   if (seed != 0)
-      random->SetSeed(seed);
+   double lower_bound = -9;
+   double upper_bound = 9;
+   std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
+   std::default_random_engine re;
 
-   for (auto param : parameters) {
+   for (auto *param : parameters) {
+      double mul = unif(re)/100;
+
       auto par = dynamic_cast<RooAbsRealLValue *>(param);
       if(!par) continue;
-      const double uni = random->Uniform();
-      const double min = par->getMin();
-      const double max = par->getMax();
-      par->setVal(min + uni * (max - min));
+      double val = par->getVal();
+      val = val + mul * (mul > 0 ? (par->getMax() - val) : (val - par->getMin()));
+
+      par->setVal(val);
    }
 }
 } // namespace RooFitADBenchmarksUtils

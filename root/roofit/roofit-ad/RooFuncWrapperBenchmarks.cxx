@@ -17,8 +17,8 @@
 #include <RooCategory.h>
 #include <RooSimultaneous.h>
 
-//#include <RooPlot.h>
-//#include <TCanvas.h>
+#include <RooPlot.h>
+#include <TCanvas.h>
 
 #include <TROOT.h>
 #include <TSystem.h>
@@ -29,6 +29,8 @@
 #include "BenchmarkUtils.h"
 
 #include "benchmark/benchmark.h"
+
+#include <limits>
 
 static int counter = 0;
 
@@ -143,7 +145,7 @@ static void BM_RooFuncWrapper_ManyParams_Minimization(benchmark::State &state)
    // Generate the same dataset for all backends.
    RooRandom::randomGenerator()->SetSeed(100);
 
-   std::size_t nEvents = state.range(1);
+   std::size_t nEvents = 1000;
 
    RooCategory channelCat{"channel_cat", ""};
 
@@ -153,7 +155,7 @@ static void BM_RooFuncWrapper_ManyParams_Minimization(benchmark::State &state)
    RooArgSet observables;
    RooArgSet models;
 
-   auto nChannels = 30;
+   auto nChannels = state.range(1);
 
    for (std::size_t i = 0; i < nChannels; ++i) {
       std::string suffix = "_" + std::to_string(i + 1);
@@ -195,11 +197,16 @@ static void BM_RooFuncWrapper_ManyParams_Minimization(benchmark::State &state)
    params.snapshot(origParams);
 
    std::unique_ptr<RooAbsReal> nllRef{model.createNLL(data, RooFit::BatchMode("off"), Offset("off"))};
-   std::unique_ptr<RooAbsReal> nllRefBatch{model.createNLL(data, RooFit::BatchMode("cpu"), Offset("off"))};
+   std::unique_ptr<RooAbsReal> nllRefBatch{model.createNLL(data, RooFit::BatchMode("cpu"), Offset("initial"))};
    auto nllRefResolved = static_cast<RooAbsReal *>(nllRefBatch->servers()[0]);
 
    std::string name = "myNll" + std::to_string(counter);
    RooFuncWrapper nllFunc(name.c_str(), name.c_str(), *nllRefResolved, observables, &data, &model);
+
+   if (std::abs(nllRef->getVal(observables) - nllFunc.getVal()) > 1e-8) {
+      std::cout << "Function values dont match!!";
+      return;
+   }
 
    std::unique_ptr<RooMinimizer> m = nullptr;
 
@@ -216,8 +223,10 @@ static void BM_RooFuncWrapper_ManyParams_Minimization(benchmark::State &state)
       m.reset(new RooMinimizer(nllFunc, minimizerCfgAd));
    }
 
-   m->setPrintLevel(-1);
+   // m->setPrintLevel(-1);
    m->setStrategy(0);
+   m->setMaxIterations(std::numeric_limits<int>::max());
+   m->setMaxFunctionCalls(std::numeric_limits<int>::max());
    params.assign(origParams);
 
    for (auto _ : state) {
@@ -229,9 +238,9 @@ static void BM_RooFuncWrapper_ManyParams_Minimization(benchmark::State &state)
 
 int main(int argc, char **argv)
 {
-
    // RooFitADBenchmarksUtils::doBenchmarks(BM_RooFuncWrapper_Minimization, 10000, 10000, 10);
-   RooFitADBenchmarksUtils::doBenchmarks(BM_RooFuncWrapper_ManyParams_Minimization, 1000, 1000, 10);
+   // int numChannels = 100;
+   RooFitADBenchmarksUtils::doBenchmarks(BM_RooFuncWrapper_ManyParams_Minimization, 80, 80, 20);
 
    benchmark::Initialize(&argc, argv);
    benchmark::RunSpecifiedBenchmarks();
